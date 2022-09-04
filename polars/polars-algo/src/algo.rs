@@ -2,7 +2,7 @@ use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 
 pub fn cut(
-    s: Series,
+    s: &Series,
     bins: Vec<f32>,
     labels: Option<Vec<&str>>,
     break_point_label: Option<&str>,
@@ -71,7 +71,7 @@ fn test_cut() -> PolarsResult<()> {
     let samples: Vec<f32> = (0..12).map(|i| -3.0 + i as f32 * 0.5).collect();
     let series = Series::new("a", samples);
 
-    let out = cut(series, vec![-1.0, 1.0], None, None, None)?;
+    let out = cut(&series, vec![-1.0, 1.0], None, None, None)?;
 
     let expected = df!(
         "a"           => [-3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5],
