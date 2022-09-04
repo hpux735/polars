@@ -3,7 +3,7 @@ use polars_lazy::prelude::*;
 
 pub fn cut(
     s: &Series,
-    bins: Vec<f32>,
+    bins: Vec<f64>,
     labels: Option<Vec<&str>>,
     break_point_label: Option<&str>,
     category_label: Option<&str>,
@@ -53,7 +53,10 @@ pub fn cut(
 
     let cuts = cuts_df
         .lazy()
-        .with_columns([col(category_str).cast(DataType::Categorical(None))])
+        .with_columns([
+            col(category_str).cast(DataType::Categorical(None)),
+            col(breakpoint_str).cast(s.dtype().to_owned())
+        ])
         .collect()?;
 
     s.sort(false).into_frame().join_asof(
@@ -67,8 +70,39 @@ pub fn cut(
 }
 
 #[test]
-fn test_cut() -> PolarsResult<()> {
+fn test_cut_f32() -> Result<()> {
     let samples: Vec<f32> = (0..12).map(|i| -3.0 + i as f32 * 0.5).collect();
+    let series = Series::new("a", samples);
+
+    let out = cut(&series, vec![-1.0, 1.0], None, None, None)?;
+
+    let expected = df!(
+        "a"           => [-3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5],
+        "break_point" => [-1.0, -1.0, -1.0, -1.0, -1.0,  1.0, 1.0, 1.0, 1.0, f64::INFINITY, f64::INFINITY, f64::INFINITY],
+        "category"    => [
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-1.0, 1.0]",
+            "(-1.0, 1.0]",
+            "(-1.0, 1.0]",
+            "(-1.0, 1.0]",
+            "(1.0, inf]",
+            "(1.0, inf]",
+            "(1.0, inf]"
+        ]
+    )?;
+
+    assert!(out.frame_equal_missing(&expected));
+
+    Ok(())
+}
+
+#[test]
+fn test_cut_f64() -> Result<()> {
+    let samples: Vec<f64> = (0..12).map(|i| -3.0 + i as f64 * 0.5).collect();
     let series = Series::new("a", samples);
 
     let out = cut(&series, vec![-1.0, 1.0], None, None, None)?;
