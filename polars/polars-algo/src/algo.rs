@@ -55,7 +55,7 @@ pub fn cut(
         .lazy()
         .with_columns([
             col(category_str).cast(DataType::Categorical(None)),
-            col(breakpoint_str).cast(s.dtype().to_owned())
+            col(breakpoint_str).cast(s.dtype().to_owned()),
         ])
         .collect()?;
 

@@ -1,3 +1,5 @@
+#[cfg(feature = "polars-algo")]
+pub use polars_algo::prelude::*;
 pub use polars_core::frame::groupby::*;
 pub use polars_core::prelude::*;
 pub use polars_core::utils::NoNull;
@@ -8,5 +10,3 @@ pub use polars_lazy::prelude::*;
 pub use polars_ops::prelude::*;
 #[cfg(feature = "temporal")]
 pub use polars_time::prelude::*;
-#[cfg(feature = "polars-algo")]
-pub use polars_algo::prelude::*;
