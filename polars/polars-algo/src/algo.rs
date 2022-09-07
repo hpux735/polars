@@ -6,9 +6,8 @@ pub fn hist(
     bins: Option<&Series>,
     bin_count: Option<usize>,
     start: Option<f64>,
-    stop: Option<f64>
+    stop: Option<f64>,
 ) -> Result<DataFrame> {
-
     let breakpoint_str = &"break_point";
 
     // if the bins are provided, then we can just use them
@@ -19,13 +18,17 @@ pub fn hist(
         let start = if let Some(start_in) = start {
             start_in
         } else {
-            s.cast(&DataType::Float64)?.min().expect("Cannot find minimum value of series")
+            s.cast(&DataType::Float64)?
+                .min()
+                .expect("Cannot find minimum value of series")
         };
 
         let stop = if let Some(stop_in) = stop {
             stop_in
         } else {
-            s.cast(&DataType::Float64)?.max().expect("Cannot find maximum value of series")
+            s.cast(&DataType::Float64)?
+                .max()
+                .expect("Cannot find maximum value of series")
         };
 
         // If the bins aren't provided, the bin_count must be provided!
@@ -33,7 +36,9 @@ pub fn hist(
 
         // Calculate the breakpoints and make the array
         let interval = (stop - start) / (bin_count as f64);
-        let breaks: Vec<f64> = (0..(bin_count)).map(|b| { start as f64 + (b as f64) * interval} ).collect();
+        let breaks: Vec<f64> = (0..(bin_count))
+            .map(|b| start as f64 + (b as f64) * interval)
+            .collect();
 
         Series::new(breakpoint_str, breaks)
     };
@@ -45,29 +50,34 @@ pub fn hist(
         DataType::Float64 => Ok((lit(f64::NEG_INFINITY), AnyValue::Float64(f64::INFINITY))),
         DataType::Float32 => Ok((lit(f32::NEG_INFINITY), AnyValue::Float32(f32::INFINITY))),
         // However, integers don't.  So, the best we can do is use the maximum for the type
-        DataType::Int64 =>  Ok((lit(i64::MIN), AnyValue::Int64( i64::MAX))),
-        DataType::Int32 =>  Ok((lit(i32::MIN), AnyValue::Int32( i32::MAX))),
-        DataType::Int16 =>  Ok((lit(i32::MIN), AnyValue::Int16( i16::MAX))),
+        DataType::Int64 => Ok((lit(i64::MIN), AnyValue::Int64(i64::MAX))),
+        DataType::Int32 => Ok((lit(i32::MIN), AnyValue::Int32(i32::MAX))),
+        DataType::Int16 => Ok((lit(i32::MIN), AnyValue::Int16(i16::MAX))),
         DataType::UInt64 => Ok((lit(u64::MIN), AnyValue::UInt64(u64::MAX))),
         DataType::UInt32 => Ok((lit(u32::MIN), AnyValue::UInt32(u32::MAX))),
         DataType::UInt16 => Ok((lit(u32::MIN), AnyValue::UInt16(u16::MAX))),
-        _ => Err(PolarsError::InvalidOperation("Cannot take histogram of non-numeric types; consider a groupby and count.".into()))
+        _ => Err(PolarsError::InvalidOperation(
+            "Cannot take histogram of non-numeric types; consider a groupby and count.".into(),
+        )),
     }?;
 
     let cuts_df = df![
         breakpoint_str => bins.extend_constant(max_value, 1)?
     ]?;
 
-    let cuts_df = cuts_df.lazy().with_column(
-        format_str(
-            "({}, {}]",
-            [
-                col(breakpoint_str).shift_and_fill(1, min_value),
-                col(breakpoint_str),
-            ],
-        )?
-        .alias(category_str),
-    ).collect()?;
+    let cuts_df = cuts_df
+        .lazy()
+        .with_column(
+            format_str(
+                "({}, {}]",
+                [
+                    col(breakpoint_str).shift_and_fill(1, min_value),
+                    col(breakpoint_str),
+                ],
+            )?
+            .alias(category_str),
+        )
+        .collect()?;
 
     let cuts = cuts_df
         .lazy()
@@ -85,7 +95,7 @@ pub fn hist(
         None,
         None,
     )?;
-    
+
     let out = out
         .select(["category", s.name()])?
         .groupby(["category"])?
