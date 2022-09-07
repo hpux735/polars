@@ -19,16 +19,18 @@ pub fn hist(
             start_in
         } else {
             s.cast(&DataType::Float64)?
-                .min()
+                .min::<f64>()
                 .expect("Cannot find minimum value of series")
+                .floor() - 1.0
         };
 
         let stop = if let Some(stop_in) = stop {
             stop_in
         } else {
             s.cast(&DataType::Float64)?
-                .max()
+                .max::<f64>()
                 .expect("Cannot find maximum value of series")
+                .ceil() + 1.0
         };
 
         // If bin_count is omitted, default to the difference between start and stop (unit bins)
