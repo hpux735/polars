@@ -1,6 +1,159 @@
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 
+pub fn hist(
+    s: &Series,
+    bins: Option<&Series>,
+    bin_count: Option<usize>,
+    start: Option<f64>,
+    stop: Option<f64>
+) -> Result<DataFrame> {
+
+    let breakpoint_str = &"break_point";
+
+    // if the bins are provided, then we can just use them
+    let bins = if let Some(bins_in) = bins {
+        Series::new(breakpoint_str, bins_in)
+    } else {
+        // If start and stop is provided, we don't need to scan the series
+        let start = if let Some(start_in) = start {
+            start_in
+        } else {
+            s.cast(&DataType::Float64)?.min().expect("Cannot find minimum value of series")
+        };
+
+        let stop = if let Some(stop_in) = stop {
+            stop_in
+        } else {
+            s.cast(&DataType::Float64)?.max().expect("Cannot find maximum value of series")
+        };
+
+        // If the bins aren't provided, the bin_count must be provided!
+        let bin_count = bin_count.expect("If bins aren't provided, bin_count must be provided.");
+
+        // Calculate the breakpoints and make the array
+        let interval = (stop - start) / (bin_count as f64);
+        let breaks: Vec<f64> = (0..(bin_count)).map(|b| { start as f64 + (b as f64) * interval} ).collect();
+
+        Series::new(breakpoint_str, breaks)
+    };
+
+    let category_str = "category";
+
+    let (min_value, max_value): (Expr, AnyValue) = match s.dtype() {
+        // Floating point values have a notion of infinity
+        DataType::Float64 => Ok((lit(f64::NEG_INFINITY), AnyValue::Float64(f64::INFINITY))),
+        DataType::Float32 => Ok((lit(f32::NEG_INFINITY), AnyValue::Float32(f32::INFINITY))),
+        // However, integers don't.  So, the best we can do is use the maximum for the type
+        DataType::Int64 =>  Ok((lit(i64::MIN), AnyValue::Int64( i64::MAX))),
+        DataType::Int32 =>  Ok((lit(i32::MIN), AnyValue::Int32( i32::MAX))),
+        DataType::Int16 =>  Ok((lit(i32::MIN), AnyValue::Int16( i16::MAX))),
+        DataType::UInt64 => Ok((lit(u64::MIN), AnyValue::UInt64(u64::MAX))),
+        DataType::UInt32 => Ok((lit(u32::MIN), AnyValue::UInt32(u32::MAX))),
+        DataType::UInt16 => Ok((lit(u32::MIN), AnyValue::UInt16(u16::MAX))),
+        _ => Err(PolarsError::InvalidOperation("Cannot take histogram of non-numeric types; consider a groupby and count.".into()))
+    }?;
+
+    let cuts_df = df![
+        breakpoint_str => bins.extend_constant(max_value, 1)?
+    ]?;
+
+    let cuts_df = cuts_df.lazy().with_column(
+        format_str(
+            "({}, {}]",
+            [
+                col(breakpoint_str).shift_and_fill(1, min_value),
+                col(breakpoint_str),
+            ],
+        )?
+        .alias(category_str),
+    ).collect()?;
+
+    let cuts = cuts_df
+        .lazy()
+        .with_columns([
+            col(category_str).cast(DataType::Categorical(None)),
+            col(breakpoint_str).cast(s.dtype().to_owned()),
+        ])
+        .collect()?;
+
+    let out = s.sort(false).into_frame().join_asof(
+        &cuts,
+        s.name(),
+        breakpoint_str,
+        AsofStrategy::Forward,
+        None,
+        None,
+    )?;
+    
+    let out = out
+        .select(["category", s.name()])?
+        .groupby(["category"])?
+        .count()?;
+
+    cuts.left_join(&out, [category_str], [category_str])?
+        .fill_null(FillNullStrategy::Zero)?
+        .sort(["category"], false)
+}
+
+#[test]
+fn test_hist_integer() -> Result<()> {
+    let df = df!(
+        "value" => [3, 3, 5, 5, 6]
+    )?;
+
+    let series = &df[0];
+    let out = hist(series, None, Some(6), Some(1.0), Some(7.0))?;
+
+    let expected = df!(
+        "break_point" => [1, 2, 3, 4, 5, 6, i32::MAX],
+        "category"    => [
+            "(-2147483648.0, 1.0]",
+            "(1.0, 2.0]",
+            "(2.0, 3.0]",
+            "(3.0, 4.0]",
+            "(4.0, 5.0]",
+            "(5.0, 6.0]",
+            "(6.0, 2147483647.0]"
+        ],
+        "value_count" => [0, 0, 2, 0, 2, 1, 0]
+    )?;
+
+    assert!(out.frame_equal_missing(&expected));
+
+    Ok(())
+}
+
+#[test]
+fn test_hist_float() -> Result<()> {
+    let df = df!(
+        "value" => [1.0, 3.4, 3.2, 6.3, 7.0]
+    )?;
+
+    let series = &df[0];
+    let bins = Series::new("bins", [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
+    let out = hist(series, Some(&bins), None, None, None)?;
+
+    let expected = df!(
+        "break_point" => [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, f64::INFINITY],
+        "category"    => [
+            "(-inf, 1.0]",
+            "(1.0, 2.0]",
+            "(2.0, 3.0]",
+            "(3.0, 4.0]",
+            "(4.0, 5.0]",
+            "(5.0, 6.0]",
+            "(6.0, 7.0]",
+            "(7.0, inf]"
+        ],
+        "value_count" => [1, 0, 0, 2, 0, 0, 2, 0]
+    )?;
+
+    assert!(out.frame_equal_missing(&expected));
+
+    Ok(())
+}
+
 pub fn cut(
     s: &Series,
     bins: Vec<f64>,
