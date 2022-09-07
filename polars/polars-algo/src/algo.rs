@@ -31,8 +31,12 @@ pub fn hist(
                 .expect("Cannot find maximum value of series")
         };
 
-        // If the bins aren't provided, the bin_count must be provided!
-        let bin_count = bin_count.expect("If bins aren't provided, bin_count must be provided.");
+        // If bin_count is omitted, default to the difference between start and stop (unit bins)
+        let bin_count = if let Some(bin_count) = bin_count {
+            bin_count
+        } else {
+            (stop - start).round() as usize
+        };
 
         // Calculate the breakpoints and make the array
         let interval = (stop - start) / (bin_count as f64);
