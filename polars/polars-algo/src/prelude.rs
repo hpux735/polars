@@ -1,1 +1,1 @@
-pub use crate::cut;
+pub use crate::{cut, hist};
