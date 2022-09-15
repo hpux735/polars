@@ -1,3 +1,4 @@
+use polars_core::error::PolarsResult as Result;
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 
